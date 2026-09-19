@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
@@ -12,9 +13,9 @@ import {
 import { parseModelName, saveSidekickPin, tryReadSidekickPin, type SidekickPin } from "./config.ts";
 
 export const MAX_LIVE_SESSIONS = 2;
-export const SIDEKICK_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"] as const;
 
 const SIDEKICK_PROMPT = fs.readFileSync(new URL("./sidekick.md", import.meta.url), "utf8").trim();
+const ROBIN_EXTENSION_PATH = fs.realpathSync(fileURLToPath(new URL("../index.ts", import.meta.url)));
 
 function safeDispose(session: AgentSession): void {
   try {
@@ -94,10 +95,19 @@ export class NestedSessions {
     const loader = new DefaultResourceLoader({
       cwd: ctx.cwd,
       agentDir: getAgentDir(),
-      noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
+      extensionsOverride: (base) => ({
+        ...base,
+        extensions: base.extensions.filter((extension) => {
+          try {
+            return fs.realpathSync(extension.resolvedPath) !== ROBIN_EXTENSION_PATH;
+          } catch {
+            return true;
+          }
+        }),
+      }),
       appendSystemPrompt: [SIDEKICK_PROMPT],
     });
     await loader.reload();
@@ -106,9 +116,9 @@ export class NestedSessions {
       modelRuntime: runtime,
       model,
       thinkingLevel: thinking,
+      excludeTools: ["sidekick"],
       resourceLoader: loader,
       sessionManager: manager,
-      tools: [...SIDEKICK_TOOLS],
     });
     return created.session;
   }
