@@ -1,14 +1,8 @@
 import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  modelName,
-  saveSidekickPin,
-  sidekickStatusText,
-  THINKING_LEVELS,
-  tryReadSidekickPin,
-  type SidekickPin,
-} from "./config.ts";
+import { modelName, sidekickStatusText, THINKING_LEVELS, type SidekickPin } from "./config.ts";
 import { pickSearch, type PickerItem } from "./picker.ts";
+import type { NestedSessions } from "./sessions.ts";
 
 function uniqueModels(models: Array<{ provider: string; id: string; name?: string }>): PickerItem[] {
   const items: PickerItem[] = [];
@@ -31,13 +25,12 @@ function announce(ctx: ExtensionContext, pin: SidekickPin | undefined): void {
   ctx.ui.notify(sidekickStatusText(pin));
 }
 
-export function registerSidekickCommand(pi: ExtensionAPI): void {
+export function registerSidekickCommand(pi: ExtensionAPI, store: NestedSessions): void {
   pi.on("session_start", (event, ctx) => {
     if (event.reason !== "new" && event.reason !== "startup") return;
-    const pin = tryReadSidekickPin();
     // Pi appends its own chat line after this event. Wait one tick so this
     // uses the same overwriteable notify line as /robin and /sidekick.
-    setTimeout(() => announce(ctx, pin), 0);
+    setTimeout(() => announce(ctx, store.pin), 0);
   });
 
   const handler: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"] = async (_args, ctx) => {
@@ -47,7 +40,7 @@ export function registerSidekickCommand(pi: ExtensionAPI): void {
       const items = allItems.length ? allItems : scopedItems;
       if (!items.length) throw new Error("No authenticated models are available");
 
-      const stored = tryReadSidekickPin();
+      const stored = store.pin;
       const selectedName = await pickSearch(ctx, {
         title: "Sidekick model",
         items,
@@ -70,7 +63,7 @@ export function registerSidekickCommand(pi: ExtensionAPI): void {
       if (!thinkingChoice) return;
 
       const pin = { model: selectedName, thinking: thinkingChoice as ModelThinkingLevel };
-      await saveSidekickPin(pin);
+      await store.setPin(pin);
       announce(ctx, pin);
     } catch (error) {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");

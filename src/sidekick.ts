@@ -12,7 +12,7 @@ import type {
 import { truncateHead } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
-import { tryReadSidekickPin } from "./config.ts";
+import type { SidekickPin } from "./config.ts";
 import {
   eightWords,
   formatDuration,
@@ -173,8 +173,7 @@ async function settle(session: AgentSession): Promise<void> {
   }
 }
 
-function modelLine(session: AgentSession | undefined): { model: string; thinking: string } {
-  const pin = tryReadSidekickPin();
+function modelLine(session: AgentSession | undefined, pin: SidekickPin | undefined): { model: string; thinking: string } {
   const model = session?.model;
   return {
     model: model ? `${model.provider}/${model.id}` : pin?.model ?? "",
@@ -228,7 +227,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
     let details: SidekickDetails = {
       taskId,
       summary,
-      ...modelLine(undefined),
+      ...modelLine(undefined, store.pin),
       status: "working",
       durationMs: 0,
       spinnerFrame,
@@ -241,7 +240,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       details = {
         ...details,
         taskId: taskId || details.taskId,
-        ...modelLine(session),
+        ...modelLine(session, store.pin),
         status,
         durationMs: Date.now() - startedAt,
         spinnerFrame,

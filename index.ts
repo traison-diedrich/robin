@@ -6,7 +6,7 @@ import { registerSidekick } from "./src/sidekick.ts";
 
 export default function robin(pi: ExtensionAPI): void {
   const store = new NestedSessions();
-  registerSidekickCommand(pi);
+  registerSidekickCommand(pi, store);
   registerSidekick(pi, store);
   registerMain(pi);
 }

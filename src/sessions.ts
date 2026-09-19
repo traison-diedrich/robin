@@ -9,7 +9,7 @@ import {
   type AgentSession,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { parseModelName, readSidekickPin } from "./config.ts";
+import { parseModelName, saveSidekickPin, tryReadSidekickPin, type SidekickPin } from "./config.ts";
 
 export const MAX_LIVE_SESSIONS = 2;
 export const SIDEKICK_TOOLS = ["read", "grep", "find", "ls", "bash", "edit", "write"] as const;
@@ -34,6 +34,12 @@ async function findSessionPath(cwd: string, sessionId: string): Promise<string |
 export class NestedSessions {
   private readonly live = new Map<string, AgentSession>();
   private runtime: ModelRuntime | undefined;
+  pin: SidekickPin | undefined = tryReadSidekickPin();
+
+  async setPin(pin: SidekickPin): Promise<void> {
+    await saveSidekickPin(pin);
+    this.pin = pin;
+  }
 
   private async getRuntime(): Promise<ModelRuntime> {
     this.runtime ??= await ModelRuntime.create();
@@ -65,7 +71,7 @@ export class NestedSessions {
   }
 
   private async sidekickModel(): Promise<{ model: Model<any>; thinking: ModelThinkingLevel }> {
-    const pin = readSidekickPin();
+    const pin = this.pin;
     if (!pin) throw new Error("Sidekick is not configured. Run /robin or /sidekick.");
     const runtime = await this.getRuntime();
     const parsed = parseModelName(pin.model);
