@@ -26,6 +26,8 @@ import { NestedSessions } from "./sessions.ts";
 
 type SidekickStatus = "working" | "completed" | "failed";
 
+const MAX_BRIEF_LENGTH = 8000;
+
 type SidekickDetails = {
   taskId: string;
   summary: string;
@@ -49,8 +51,8 @@ const PARAMETERS = Type.Object({
   }),
   brief: Type.String({
     minLength: 1,
-    maxLength: 8000,
-    description: "Success criteria, constraints, and optional path hints. Not the main transcript. Not the title.",
+    description:
+      "Success criteria, constraints, and optional path hints. Not the main transcript. Not the title. Maximum 8,000 characters.",
   }),
   taskId: Type.Optional(
     Type.String({
@@ -217,6 +219,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
     onUpdate: AgentToolUpdateCallback<SidekickDetails> | undefined,
     ctx: ExtensionContext,
   ): Promise<AgentToolResult<SidekickDetails>> {
+    const briefLength = params.brief.length;
     const summary = eightWords(params.title) || "Robin";
     const startedAt = Date.now();
     let taskId = params.taskId?.trim() || "";
@@ -249,6 +252,19 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       };
       onUpdate?.({ content: [{ type: "text", text: `${status} ${summary}` }], details });
     };
+
+    if (briefLength > MAX_BRIEF_LENGTH) {
+      const message =
+        `Brief exceeds the 8,000-character limit. Actual character count: ${briefLength}. ` +
+        "Compress the brief to fit, or write the handoff to a file and give the sidekick the file path.";
+      taskId = taskId || "unknown";
+      update("failed", message);
+      return {
+        content: [{ type: "text", text: clipReport(taskId, `taskId: ${taskId}\nstatus: failed\nnotes:\n${message}`) }],
+        details,
+        usage: usageSince(session, afterIndex),
+      };
+    }
 
     update("working");
     const ticker = setInterval(() => {
