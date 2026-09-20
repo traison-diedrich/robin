@@ -134,6 +134,12 @@ export class NestedSessions {
       resourceLoader: loader,
       sessionManager: manager,
     });
+    try {
+      await created.session.bindExtensions({ mode: "print" });
+    } catch (error) {
+      safeDispose(created.session);
+      throw error;
+    }
     return created.session;
   }
 
