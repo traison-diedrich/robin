@@ -45,7 +45,7 @@ const PARAMETERS = Type.Object({
     minLength: 1,
     maxLength: 200,
     description:
-      "Exactly 8 complete words that summarize this task. A finished phrase. No file paths. No cut words. Not the brief.",
+      "Eight complete words or fewer that summarize this task. A finished phrase. No file paths. No cut words. Not the brief.",
   }),
   brief: Type.String({
     minLength: 1,
@@ -94,8 +94,8 @@ function persistedTaskId(session: AgentSession | undefined, taskId: string): str
 }
 
 function withTaskId(taskId: string, text: string): string {
-  if (/^taskId:\s*\S+/m.test(text)) return text;
-  return `taskId: ${taskId}\n${text}`;
+  const body = text.replace(/^taskId:\s*\S+[ \t]*\r?\n?/gm, "").replace(/^\s+/, "");
+  return `taskId: ${taskId}\n${body}`;
 }
 
 function clipReport(taskId: string, text: string): string {

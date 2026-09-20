@@ -25,6 +25,12 @@ function safeDispose(session: AgentSession): void {
   }
 }
 
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isSessionId(taskId: string): boolean {
+  return SESSION_ID.test(taskId);
+}
+
 async function findSessionPath(cwd: string, sessionId: string): Promise<string | undefined> {
   const sessions = await SessionManager.list(cwd);
   const matches = sessions.filter((session) => session.id === sessionId);
@@ -69,6 +75,14 @@ export class NestedSessions {
   disposeAll(): void {
     for (const sessionId of [...this.live.keys()]) this.drop(sessionId);
     this.runtime = undefined;
+  }
+
+  private unknownSessionError(taskId: string, reason = "Unknown"): Error {
+    const live = [...this.live.keys()];
+    const liveText = live.length > 0 ? ` Live sessions: ${live.join(", ")}.` : "";
+    return new Error(
+      `${reason} session id "${taskId}".${liveText} Call sidekick without taskId to create a session.`,
+    );
   }
 
   private async sidekickModel(): Promise<{ model: Model<any>; thinking: ModelThinkingLevel }> {
@@ -132,8 +146,12 @@ export class NestedSessions {
       return session;
     }
 
+    if (!isSessionId(taskId)) {
+      throw this.unknownSessionError(taskId, "Invalid");
+    }
+
     if (taskId === ctx.sessionManager.getSessionId()) {
-      throw new Error(`Unknown session id "${taskId}". Call sidekick without taskId to create a session.`);
+      throw this.unknownSessionError(taskId);
     }
 
     const live = this.live.get(taskId);
@@ -151,13 +169,13 @@ export class NestedSessions {
 
     const file = await findSessionPath(ctx.cwd, taskId);
     if (!file) {
-      throw new Error(`Unknown session id "${taskId}". Call sidekick without taskId to create a session.`);
+      throw this.unknownSessionError(taskId);
     }
 
     const opened = await this.startSession(ctx, model, thinking, file);
     if (opened.sessionId !== taskId) {
       safeDispose(opened);
-      throw new Error(`Unknown session id "${taskId}". Call sidekick without taskId to create a session.`);
+      throw this.unknownSessionError(taskId);
     }
     this.remember(taskId, opened);
     return opened;

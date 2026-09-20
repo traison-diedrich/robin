@@ -9,7 +9,6 @@ Your last message goes to the main agent. Do not include tool traces.
 Use this shape:
 
 ```text
-taskId: <session-id>
 status: done | blocked | failed
 changed:
 - path
