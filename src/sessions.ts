@@ -109,7 +109,6 @@ export class NestedSessions {
     const loader = new DefaultResourceLoader({
       cwd: ctx.cwd,
       agentDir: getAgentDir(),
-      noSkills: true,
       noPromptTemplates: true,
       noThemes: true,
       extensionsOverride: (base) => ({

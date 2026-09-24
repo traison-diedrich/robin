@@ -27,7 +27,7 @@ function announce(ctx: ExtensionContext, pin: SidekickPin | undefined): void {
 
 export function registerSidekickCommand(pi: ExtensionAPI, store: NestedSessions): void {
   pi.on("session_start", (event, ctx) => {
-    if (event.reason !== "new" && event.reason !== "startup") return;
+    if (event.reason !== "new" && event.reason !== "startup" && event.reason !== "reload") return;
     // Pi appends its own chat line after this event. Wait one tick so this
     // uses the same overwriteable notify line as /robin and /sidekick.
     setTimeout(() => announce(ctx, store.pin), 0);

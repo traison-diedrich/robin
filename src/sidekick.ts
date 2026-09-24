@@ -288,7 +288,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       signal?.addEventListener("abort", abort, { once: true });
       try {
         const prompt = existingId ? params.brief.trim() : `taskId: ${taskId}\n\n${params.brief.trim()}`;
-        await session.prompt(prompt, { expandPromptTemplates: false });
+        await session.prompt(prompt, { expandPromptTemplates: true });
         if (signal?.aborted) throw new Error("Sidekick was aborted");
         const text =
           lastAssistantText(session.messages, afterTimestamp) ??
