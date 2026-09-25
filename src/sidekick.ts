@@ -24,6 +24,10 @@ import {
 } from "./sidekick-display.ts";
 import { NestedSessions } from "./sessions.ts";
 
+type SidekickStopReason = "idle_timeout" | "external_abort";
+
+const SIDEKICK_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
 type SidekickStatus = "working" | "completed" | "failed";
 
 const MAX_BRIEF_LENGTH = 8000;
@@ -85,6 +89,27 @@ function lastAssistantText(messages: readonly AgentMessage[], afterTimestamp: nu
       .join("\n")
       .trim();
     if (text) return text;
+  }
+  return undefined;
+}
+
+function finalAssistantText(messages: readonly AgentMessage[], afterTimestamp: number): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (messageTime(message) <= afterTimestamp) continue;
+    if (!isRecord(message)) continue;
+    if (message.role === "user" || message.role === "toolResult") return undefined;
+    if (message.role !== "assistant") continue;
+    if (!Array.isArray(message.content)) return undefined;
+    const assistant = message as AssistantMessage;
+    if (assistant.stopReason === "error" || assistant.stopReason === "aborted") return undefined;
+    if (assistant.content.some((part) => part.type === "toolCall")) return undefined;
+    const text = assistant.content
+      .filter((part): part is TextContent => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
+    return text || undefined;
   }
   return undefined;
 }
@@ -167,12 +192,14 @@ function usageFrom(session: AgentSession | undefined): Pick<SidekickDetails, "co
   };
 }
 
-async function settle(session: AgentSession): Promise<void> {
-  try {
-    await session.waitForIdle();
-  } catch {
-    // Already disposed during parent shutdown.
-  }
+function timeoutReport(taskId: string): string {
+  return [
+    `taskId: ${taskId}`,
+    "status: failed",
+    "notes:",
+    `Cancellation reason: idle_timeout. No sidekick progress event was received for five minutes. The sidekick was stopped.`,
+    `Next steps: Inspect progress/files, then continue the same taskId (${taskId}) only if safe.`,
+  ].join("\n");
 }
 
 function modelLine(session: AgentSession | undefined, pin: SidekickPin | undefined): { model: string; thinking: string } {
@@ -227,6 +254,10 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
     let session: AgentSession | undefined;
     let afterTimestamp = 0;
     let afterIndex = 0;
+    let stopReason: SidekickStopReason | undefined;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let abortListener: (() => void) | undefined;
     let details: SidekickDetails = {
       taskId,
       summary,
@@ -266,46 +297,88 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       };
     }
 
-    update("working");
-    const ticker = setInterval(() => {
-      spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
-      update(details.status, details.error);
-    }, 120);
-
+    let ticker: ReturnType<typeof setInterval> | undefined;
     try {
+      update("working");
+      ticker = setInterval(() => {
+        spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
+        update(details.status, details.error);
+      }, 120);
+
       const existingId = params.taskId?.trim() || undefined;
       session = await store.acquire(ctx, existingId);
       taskId = session.sessionId;
       afterTimestamp = messageTime(session.messages[session.messages.length - 1]);
       afterIndex = session.sessionManager.getEntries().length;
+
+      const stop = (reason: SidekickStopReason): void => {
+        if (stopReason) return;
+        stopReason = reason;
+        try {
+          session?.abortBash();
+        } catch {
+          // Session already closing.
+        }
+        session?.abort().catch(() => {});
+      };
+      const resetIdle = (): void => {
+        if (idleTimer !== undefined) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => stop("idle_timeout"), SIDEKICK_IDLE_TIMEOUT_MS);
+      };
+      idleTimer = setTimeout(() => stop("idle_timeout"), SIDEKICK_IDLE_TIMEOUT_MS);
+      unsubscribe = session.subscribe(resetIdle);
+      abortListener = () => stop("external_abort");
+      signal?.addEventListener("abort", abortListener, { once: true });
+      if (signal?.aborted) {
+        stop("external_abort");
+        throw new Error("Sidekick was aborted");
+      }
       update("working");
 
-      if (signal?.aborted) throw new Error("Sidekick was aborted");
-
-      const abort = (): void => {
-        void session?.abort();
-      };
-      signal?.addEventListener("abort", abort, { once: true });
+      const prompt = existingId ? params.brief.trim() : `taskId: ${taskId}\n\n${params.brief.trim()}`;
+      let promptFailure: unknown;
+      let promptFailed = false;
       try {
-        const prompt = existingId ? params.brief.trim() : `taskId: ${taskId}\n\n${params.brief.trim()}`;
         await session.prompt(prompt, { expandPromptTemplates: true });
-        if (signal?.aborted) throw new Error("Sidekick was aborted");
-        const text =
-          lastAssistantText(session.messages, afterTimestamp) ??
-          "status: done\nnotes:\nNo final text from the sidekick.";
-        const report = clipReport(taskId, withTaskId(taskId, text));
-        update("completed");
+      } catch (error) {
+        promptFailure = error;
+        promptFailed = true;
+      }
+      if (stopReason === "external_abort") throw new Error("Sidekick was aborted");
+      if (stopReason === "idle_timeout") {
+        const finalText = finalAssistantText(session.messages, afterTimestamp);
+        if (finalText !== undefined) {
+          const report = clipReport(taskId, withTaskId(taskId, finalText));
+          update("completed");
+          return {
+            content: [{ type: "text", text: report }],
+            details,
+            usage: usageSince(session, afterIndex),
+          };
+        }
+        const message = "No sidekick progress for five minutes; sidekick stopped.";
+        update("failed", message);
         return {
-          content: [{ type: "text", text: report }],
+          content: [{ type: "text", text: clipReport(taskId, timeoutReport(taskId)) }],
           details,
           usage: usageSince(session, afterIndex),
         };
-      } finally {
-        signal?.removeEventListener("abort", abort);
-        await settle(session);
       }
+      if (promptFailed) throw promptFailure;
+
+      const text =
+        lastAssistantText(session.messages, afterTimestamp) ??
+        "status: done\nnotes:\nNo final text from the sidekick.";
+      const report = clipReport(taskId, withTaskId(taskId, text));
+      update("completed");
+      return {
+        content: [{ type: "text", text: report }],
+        details,
+        usage: usageSince(session, afterIndex),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+
       taskId = persistedTaskId(session, taskId);
       const notes =
         taskId === "unknown"
@@ -318,7 +391,10 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
         usage: usageSince(session, afterIndex),
       };
     } finally {
-      clearInterval(ticker);
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      unsubscribe?.();
+      if (signal && abortListener) signal.removeEventListener("abort", abortListener);
+      if (ticker !== undefined) clearInterval(ticker);
     }
   }
 
