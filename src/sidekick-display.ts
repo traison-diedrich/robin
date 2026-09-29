@@ -47,7 +47,7 @@ export function renderAgentIndicator(theme: Theme, status: AgentStatus, spinnerF
   if (status === "working") {
     return theme.fg("accent", SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] ?? SPINNER_FRAMES[0]);
   }
-  return status === "completed" ? theme.fg("success", "✓") : theme.fg("error", "✗");
+  return status === "completed" ? theme.fg("success", "✓") : "✗";
 }
 
 export function oneLineError(text: string): string {

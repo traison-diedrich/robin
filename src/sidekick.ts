@@ -32,6 +32,8 @@ type SidekickStatus = "working" | "completed" | "failed";
 
 const MAX_BRIEF_LENGTH = 8000;
 
+type SidekickToolResult = AgentToolResult<SidekickDetails> & { isError?: boolean };
+
 type SidekickDetails = {
   taskId: string;
   summary: string;
@@ -227,7 +229,7 @@ function renderSidekickResult(result: { details?: unknown }, theme: Theme): Cont
     ),
   );
   if (details.status === "failed" && details.error) {
-    box.addChild(new Text(`  ${theme.fg("error", oneLineError(details.error))}`, 0, 0));
+    box.addChild(new Text(`  ${oneLineError(details.error)}`, 0, 0));
   }
   return box;
 }
@@ -245,7 +247,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
     signal: AbortSignal | undefined,
     onUpdate: AgentToolUpdateCallback<SidekickDetails> | undefined,
     ctx: ExtensionContext,
-  ): Promise<AgentToolResult<SidekickDetails>> {
+  ): Promise<SidekickToolResult> {
     const briefLength = params.brief.length;
     const summary = eightWords(params.title) || "Robin";
     const startedAt = Date.now();
@@ -293,6 +295,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       return {
         content: [{ type: "text", text: clipReport(taskId, `taskId: ${taskId}\nstatus: failed\nnotes:\n${message}`) }],
         details,
+        isError: true,
         usage: usageSince(session, afterIndex),
       };
     }
@@ -361,6 +364,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
         return {
           content: [{ type: "text", text: clipReport(taskId, timeoutReport(taskId)) }],
           details,
+          isError: true,
           usage: usageSince(session, afterIndex),
         };
       }
@@ -388,6 +392,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       return {
         content: [{ type: "text", text: clipReport(taskId, `taskId: ${taskId}\nstatus: failed\nnotes:\n${notes}`) }],
         details,
+        isError: true,
         usage: usageSince(session, afterIndex),
       };
     } finally {
