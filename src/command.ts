@@ -1,5 +1,6 @@
 import { getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { modelName, sidekickStatusText, THINKING_LEVELS, type SidekickPin } from "./config.ts";
 import { pickSearch, type PickerItem } from "./picker.ts";
 import type { NestedSessions } from "./sessions.ts";
@@ -21,16 +22,28 @@ function uniqueModels(models: Array<{ provider: string; id: string; name?: strin
   return items;
 }
 
-function announce(ctx: ExtensionContext, pin: SidekickPin | undefined): void {
-  ctx.ui.notify(sidekickStatusText(pin));
+function updateStatus(ctx: ExtensionContext, store: NestedSessions): void {
+  const text = sidekickStatusText(store.pin);
+  const columns = Number.isFinite(process.stdout.columns) ? Math.max(0, process.stdout.columns) : 0;
+  // Leading braille blanks survive footer trimming; other extension statuses may follow Robin and use extra width.
+  const padding = Math.min(10_000, Math.max(0, columns - visibleWidth(text)));
+  ctx.ui.setStatus("robin", `${"\u2800".repeat(padding)}${ctx.ui.theme.fg("dim", text)}`);
 }
 
 export function registerSidekickCommand(pi: ExtensionAPI, store: NestedSessions): void {
-  pi.on("session_start", (event, ctx) => {
-    if (event.reason !== "new" && event.reason !== "startup" && event.reason !== "reload") return;
-    // Pi appends its own chat line after this event. Wait one tick so this
-    // uses the same overwriteable notify line as /robin and /sidekick.
-    setTimeout(() => announce(ctx, store.pin), 0);
+  let currentContext: ExtensionContext | undefined;
+  const refreshStatus = (): void => {
+    if (currentContext) updateStatus(currentContext, store);
+  };
+  pi.on("session_start", (_event, ctx) => {
+    process.stdout.off("resize", refreshStatus);
+    currentContext = ctx;
+    process.stdout.on("resize", refreshStatus);
+    refreshStatus();
+  });
+  pi.on("session_shutdown", () => {
+    process.stdout.off("resize", refreshStatus);
+    currentContext = undefined;
   });
 
   const handler: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"] = async (_args, ctx) => {
@@ -64,7 +77,7 @@ export function registerSidekickCommand(pi: ExtensionAPI, store: NestedSessions)
 
       const pin = { model: selectedName, thinking: thinkingChoice as ModelThinkingLevel };
       await store.setPin(pin);
-      announce(ctx, pin);
+      updateStatus(ctx, store);
     } catch (error) {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
     }

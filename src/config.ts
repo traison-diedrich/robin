@@ -69,9 +69,9 @@ export async function saveSidekickPin(pin: SidekickPin): Promise<void> {
 }
 
 export function sidekickStatusText(pin: SidekickPin | undefined): string {
-  if (!pin) return "Sidekick is not configured. Run /robin or /sidekick.";
+  if (!pin) return "robin: not configured • run /robin";
   const parsed = parseModelName(pin.model);
   const provider = parsed?.provider ?? pin.model;
   const id = parsed?.id ?? pin.model;
-  return `Sidekick: (${provider}) ${id} • ${pin.thinking}`;
+  return `robin: (${provider}) ${id} • ${pin.thinking}`;
 }
