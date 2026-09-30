@@ -42,10 +42,16 @@ export class NestedSessions {
   private readonly live = new Map<string, AgentSession>();
   private runtime: ModelRuntime | undefined;
   pin: SidekickPin | undefined = tryReadSidekickPin();
+  private pinChangeHandler: (() => void) | undefined;
+
+  setPinChangeHandler(handler: (() => void) | undefined): void {
+    this.pinChangeHandler = handler;
+  }
 
   async setPin(pin: SidekickPin): Promise<void> {
     await saveSidekickPin(pin);
     this.pin = pin;
+    this.pinChangeHandler?.();
   }
 
   private async getRuntime(): Promise<ModelRuntime> {

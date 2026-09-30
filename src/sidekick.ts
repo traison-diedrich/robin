@@ -45,6 +45,7 @@ type SidekickDetails = {
   cost: number;
   contextPercent: number | null;
   contextWindow: number;
+  usage?: Usage;
   error?: string;
 };
 
@@ -281,6 +282,7 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
         durationMs: Date.now() - startedAt,
         spinnerFrame,
         ...usageFrom(session),
+        usage: usageSince(session, afterIndex),
         error,
       };
       onUpdate?.({ content: [{ type: "text", text: `${status} ${summary}` }], details });
@@ -296,7 +298,6 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
         content: [{ type: "text", text: clipReport(taskId, `taskId: ${taskId}\nstatus: failed\nnotes:\n${message}`) }],
         details,
         isError: true,
-        usage: usageSince(session, afterIndex),
       };
     }
 
@@ -356,7 +357,6 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
           return {
             content: [{ type: "text", text: report }],
             details,
-            usage: usageSince(session, afterIndex),
           };
         }
         const message = "No sidekick progress for five minutes; sidekick stopped.";
@@ -365,7 +365,6 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
           content: [{ type: "text", text: clipReport(taskId, timeoutReport(taskId)) }],
           details,
           isError: true,
-          usage: usageSince(session, afterIndex),
         };
       }
       if (promptFailed) throw promptFailure;
@@ -378,7 +377,6 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
       return {
         content: [{ type: "text", text: report }],
         details,
-        usage: usageSince(session, afterIndex),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -393,7 +391,6 @@ export function registerSidekick(pi: ExtensionAPI, store: NestedSessions): void 
         content: [{ type: "text", text: clipReport(taskId, `taskId: ${taskId}\nstatus: failed\nnotes:\n${notes}`) }],
         details,
         isError: true,
-        usage: usageSince(session, afterIndex),
       };
     } finally {
       if (idleTimer !== undefined) clearTimeout(idleTimer);
